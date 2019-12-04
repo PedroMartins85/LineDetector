@@ -22,6 +22,7 @@ using namespace cv;
 using namespace std;
 
 Vec4i coord_ant;
+int contVel=0;
 
 /**
 @brief constructor of class with initi with default parameters
@@ -54,7 +55,6 @@ void LineProcessing::lineExtraction(const sensor_msgs::ImageConstPtr& msg)
 
 	width_image=msg->width;
    	heigh_image=msg->height;
-	
 
 	//@bug it is not neceesary to convert to opencv image
 	cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
@@ -68,76 +68,133 @@ void LineProcessing::lineExtraction(const sensor_msgs::ImageConstPtr& msg)
 	//cv::rgb2gray(cvptr->image, gray);
 	//gray.at<float>(x,y);
 
-	Mat original_img, cropped_img, gray_img, filter_img, threshold_img, blur_img,canny_img, houghline_res, colored_canny;
+	Mat original_img, cropped_img, cropped_img_2, gray_img, filter_img, threshold_img, blur_img,canny_img, houghline_res, colored_canny, median_img;
 	original_img = cv_ptr->image; //imagem original 
-	Rect tam(20, heigh_image-60, width_image-40, 30); //tamanho da imagem que vai ser cortado
+	int altura1 = 20;
+	int altura2 = 40;
+	int tamanho = 20;
+	Rect tam(altura1, heigh_image-(altura1+tamanho), width_image-20, 20); //tamanho da imagem que vai ser cortado
 	cropped_img = original_img(tam); //imagem cortada
+
+	// Rect tam(20, heigh_image-60, width_image-40, 30); //tamanho da imagem que vai ser cortado
+	// cropped_img = original_img(tam); //imagem cortada
 
 	imshow("original", original_img);
 	cvtColor(cropped_img, gray_img, CV_BGR2GRAY); //escala de cinza (função canny só funciona com escala de cinza)
 	imshow("gray", gray_img);
-	//threshold(gray_img, threshold_img, 70, 255, THRESH_BINARY_INV);
-	Canny(gray_img, canny_img, 50, 200, 3); //detecta a borda da linha
+	threshold(gray_img, threshold_img, 70, 255, THRESH_BINARY_INV);
+	medianBlur(threshold_img, median_img, 9);
+	imshow("median", median_img);
+	Canny(median_img, canny_img, 100, 200, 3); //detecta a borda da linha
 	imshow("canny", canny_img);
 
+
+	if(coord_ant[0]==0){
+		coord_ant[0] = 172;
+		coord_ant[1] = 20;
+		coord_ant[2] = 172;
+		coord_ant[3] = 0;
+	}
+
 	cvtColor(canny_img, colored_canny, CV_GRAY2BGR);
-	
+
 	vector<Vec4i> lines;
 	Vec4i coord;
 	coord[0] = 0;
 	coord[1] = 0;
 	coord[2] = 0;
 	coord[3] = 0;
+
 	HoughLinesP(canny_img, lines, 1, CV_PI/180, 20, 5, 20 ); //detecta os pontos
+	int cont = 0;
 	for( size_t i = 0; i < lines.size(); i++ )
 	{
 		Vec4i l = lines[i];
 		line( colored_canny, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(255,0,0), 3, LINE_AA);
-
-		coord[0]+= l[0];
-		coord[1] += l[1];
-		coord[2] += l[2];
-		coord[3] += l[3];
+		if(abs(l[3]-l[1]) > 5){
+			coord[0]+= l[0];
+			coord[1] += l[1];
+			coord[2] += l[2];
+			coord[3] += l[3];
+			cont++;
+		}
 	}
 	
-	if (lines.size()!=0){
-		coord[0] /= lines.size();
-		coord[1] /= lines.size();
-		coord[2] /= lines.size();
-		coord[3] /= lines.size();	
-	}
-
-
-	if (abs(coord[1]-coord[3]) > 15 && abs((coord[0]+coord[2])/2-(coord_ant[0]+coord_ant[2])/2) < width_image/2){
+	if (cont!=0){
+		coord[0] /= cont;
+		coord[1] /= cont;
+		coord[2] /= cont;
+		coord[3] /= cont;
 		coord_ant = coord;
-		line( colored_canny, Point(coord[0], coord[1]), Point(coord[2], coord[3]), Scalar(0,255,0), 3, LINE_AA);
 	}
-	else
-	{
-		coord = coord_ant;
-		line( colored_canny, Point(coord[0], coord[1]), Point(coord[2], coord[3]), Scalar(0,255,0), 3, LINE_AA);
+	else{
+		coord = coord_ant;	
 	}
+	line( colored_canny, Point(coord[0], coord[1]), Point(coord[2], coord[3]), Scalar(0,255,0), 3, LINE_AA);
+
 	namedWindow( "saida", WINDOW_AUTOSIZE );
 	imshow("saida", colored_canny);
+	//namedWindow( "saidaFinal", WINDOW_AUTOSIZE );
+	//imshow("saidaFinal", original_img);
 
-
-	//cout << (180*atan((coord[2]-coord[0])/(coord[3]-coord[1])))/3.14159 << endl;
+	
 	int x = (int)(coord[0]+coord[2])/2;
-	int w_image = (int)(width_image-40)/2;
-	float angulo;
+	int w_image = (int)(width_image-40);
+	int yaw = 1500;
+
+	//int yaw = 1500 + 500*(x - w_image/2)/2;
+	//cout<<"YAW "<<yaw<<endl;
+	int velocidade;
+
+	//int razao = 0;
+	//razao = int(int(abs(coord[0]-coord[2])/abs(coord[1]-coord[3]))*10000);
+
+	// if (x<w_image){
+	// 	yaw = -1500*(w_image-x)/w_image;
+	// }
+	// else if(x>w_image){
+	// 	yaw = 1500*(x-w_image)/w_image;
+	// }
+	// contVel++;
+	velocidade = 1565;
+	// if (contVel%2==0) velocidade--;
+	// else velocidade++;
+	
+	
+	//float angulo;
 	if (x<w_image){
-		angulo = -100*(w_image-x)/w_image;
+		yaw = -1000*(w_image-x)/w_image;
 	}
 	else if(x>w_image){
-		angulo = 100*(x-w_image)/w_image;
+		yaw = 1000*(x-w_image)/w_image;
 	}
-	else angulo = 0;
+	else yaw = 0;
+	cout<<"YAW "<<yaw<<endl;
+	yaw = yaw+2000;
+	//cout<<"YAW "<<yaw<<endl;
+	if (yaw > 1900){
+		yaw = 1900;
+	}
+	else if (yaw < 1100){
+		yaw = 1100;
+	}
 
-	cout<<angulo<<endl;
 
+	//cout << float(float(coord[3]-coord[1])/float(coord[2]-coord[0])) << endl;
+	
 
+	cout<<"Center: "<< w_image/2 <<"\nPoint: "<<x<<"\nEstressamento: "<<yaw<<"\nVelocidade: "<<velocidade<<"\n\n";
 
-	waitKey(3);
+	//cout<<"Angulo: "<<yaw<<endl;
+
+	//codigo para mandar comandos para o carrinho
+	//double driver_wheel = visual_servoing_control(ponto1, ponto2);
+	// static int aux = 0;
+	erlerover_manager.setAngularVelocity(yaw);
+	erlerover_manager.setLinearVelocity(velocidade);
+	 	//SendCommandEB2();
+
+	waitKey(1);
 
 
 	
@@ -202,6 +259,7 @@ double LineProcessing::visual_servoing_control(cv::Point2f statePt1, cv::Point2f
 
 void LineProcessing::SendCommandEB2()
 {
+	//cout<<"ENVIANDO COMANDO\n";
 	int rate = 30;
   	ros::Rate r(rate);
 
